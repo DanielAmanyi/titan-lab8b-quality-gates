@@ -1,0 +1,62 @@
+name: QA and Code Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    name: qa
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install tools
+        run: python -m pip install pytest pytest-cov
+
+      - name: Run QA and produce XML
+        run: |
+          python -m pytest -q \
+            --cov=app --cov=orders --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --junitxml=test-results.xml \
+            --cov-fail-under=80
+
+      - name: Verify reports before analysis
+        run: |
+          test -s coverage.xml
+          test -s test-results.xml
+          ls -lh coverage.xml test-results.xml
+
+      - name: SonarQube analysis and gate wait
+        uses: SonarSource/sonarqube-scan-action@v8.3.0
+        with:
+          args: >
+            -Dsonar.qualitygate.wait=true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+
+      - name: Preserve QA evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: qa-xml-${{ github.run_id }}
+          path: |
+            coverage.xml
+            test-results.xml
+          if-no-files-found: warn
